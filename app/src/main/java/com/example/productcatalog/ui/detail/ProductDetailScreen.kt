@@ -1,5 +1,14 @@
 package com.example.productcatalog.ui.detail
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
@@ -44,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +63,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.productcatalog.domain.Product
+import com.example.productcatalog.ui.cart.CartViewModel
 import com.example.productcatalog.ui.components.ErrorView
 import com.example.productcatalog.ui.components.LoadingView
 import com.example.productcatalog.ui.theme.AmberOnRatingContainer
@@ -67,9 +79,11 @@ fun ProductDetailScreen(
     cartCount: Int,
     onBack: () -> Unit,
     onCartClick: () -> Unit,
+    cartViewModel: CartViewModel = viewModel(factory = CartViewModel.Factory),
     viewModel: ProductDetailViewModel = viewModel(factory = ProductDetailViewModel.Factory)
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val cartState by cartViewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -104,15 +118,16 @@ fun ProductDetailScreen(
                         onClick = onCartClick,
                         modifier = Modifier.padding(end = 4.dp)
                     ) {
+                        val currentCartCount = cartState.totalItems
                         BadgedBox(
                             badge = {
-                                if (cartCount > 0) {
+                                if (currentCartCount > 0) {
                                     Badge(
                                         containerColor = MaterialTheme.colorScheme.primary,
                                         contentColor = MaterialTheme.colorScheme.onPrimary
                                     ) {
                                         Text(
-                                            text = if (cartCount > 99) "99+" else "$cartCount",
+                                            text = if (currentCartCount > 99) "99+" else "$currentCartCount",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -134,9 +149,14 @@ fun ProductDetailScreen(
         bottomBar = {
             if (state is DetailUiState.Success) {
                 val product = (state as DetailUiState.Success).product
+                val cartItem = cartState.items.find { it.productId == product.id }
+                val quantity = cartItem?.quantity ?: 0
                 DetailBottomBar(
                     product = product,
-                    onAddToCart = viewModel::addToCart
+                    quantity = quantity,
+                    onAddToCart = { cartViewModel.addToCart(product) },
+                    onIncrease = { cartViewModel.increase(product.id) },
+                    onDecrease = { cartViewModel.decrease(product.id) }
                 )
             }
         }
@@ -342,7 +362,10 @@ private fun DetailContent(
 @Composable
 private fun DetailBottomBar(
     product: Product,
-    onAddToCart: () -> Unit
+    quantity: Int,
+    onAddToCart: () -> Unit,
+    onIncrease: () -> Unit,
+    onDecrease: () -> Unit
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -369,32 +392,130 @@ private fun DetailBottomBar(
                 )
             }
 
-            Button(
-                onClick = onAddToCart,
-                enabled = product.stock > 0,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = androidx.compose.ui.graphics.Color.White,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier
-                    .height(48.dp)
-                    .width(180.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ShoppingCart,
-                    contentDescription = null,
-                    tint = if (product.stock > 0) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (product.stock > 0) "Add to Cart" else "Out of Stock",
-                    color = if (product.stock > 0) androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Bold
-                )
+            if (product.stock <= 0) {
+                Button(
+                    onClick = {},
+                    enabled = false,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier
+                        .height(48.dp)
+                        .width(180.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingCart,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Out of Stock",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                AnimatedContent(
+                    targetState = quantity > 0,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.92f, animationSpec = tween(220)))
+                            .togetherWith(fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.92f, animationSpec = tween(180)))
+                    },
+                    label = "AddToCartTransition"
+                ) { inCart ->
+                    if (inCart) {
+                        Surface(
+                            modifier = Modifier
+                                .height(48.dp)
+                                .width(180.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            shadowElevation = 2.dp
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = onDecrease,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Text(
+                                        text = "−",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+
+                                AnimatedContent(
+                                    targetState = quantity,
+                                    transitionSpec = {
+                                        if (targetState > initialState) {
+                                            (slideInVertically(animationSpec = tween(180)) { height -> height / 2 } + fadeIn(animationSpec = tween(180)))
+                                                .togetherWith(slideOutVertically(animationSpec = tween(180)) { height -> -height / 2 } + fadeOut(animationSpec = tween(180)))
+                                        } else {
+                                            (slideInVertically(animationSpec = tween(180)) { height -> -height / 2 } + fadeIn(animationSpec = tween(180)))
+                                                .togetherWith(slideOutVertically(animationSpec = tween(180)) { height -> height / 2 } + fadeOut(animationSpec = tween(180)))
+                                        }
+                                    },
+                                    label = "QuantityNumberAnimation"
+                                ) { count ->
+                                    Text(
+                                        text = "$count",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = onIncrease,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Increase",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = onAddToCart,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .width(180.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ShoppingCart,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Add to Cart",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
     }

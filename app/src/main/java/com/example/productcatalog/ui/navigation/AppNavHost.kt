@@ -42,6 +42,7 @@ fun AppNavHost() {
         ) {
             ProductDetailScreen(
                 cartCount = cartState.totalItems,
+                cartViewModel = cartViewModel,
                 onBack = { navController.popBackStack() },
                 onCartClick = { navController.navigate(Routes.CART) }
             )

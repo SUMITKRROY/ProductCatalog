@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.productcatalog.CatalogApp
 import com.example.productcatalog.data.repository.CartRepository
 import com.example.productcatalog.domain.CartItem
+import com.example.productcatalog.domain.Product
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -33,6 +34,7 @@ class CartViewModel(private val repository: CartRepository) : ViewModel() {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CartUiState())
 
+    fun addToCart(product: Product) { viewModelScope.launch { repository.add(product) } }
     fun increase(id: Int) { viewModelScope.launch { repository.increase(id) } }
     fun decrease(id: Int) { viewModelScope.launch { repository.decrease(id) } }
     fun remove(id: Int) { viewModelScope.launch { repository.remove(id) } }
